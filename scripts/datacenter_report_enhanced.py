@@ -476,17 +476,40 @@ message += f"📁 Excel: datacenter_report_{date_str}.xlsx"
 
 print("📱 텔레그램 전송 중...\n")
 
+# 1. 텍스트 메시지 전송
 url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
 payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
 
 try:
     response = requests.post(url, data=payload)
     if response.status_code == 200:
-        print("✅ 텔레그램 전송 성공!")
+        print("✅ 텔레그램 메시지 전송 성공!")
     else:
-        print(f"❌ 전송 실패: {response.status_code}")
+        print(f"❌ 메시지 전송 실패: {response.status_code}")
 except Exception as e:
-    print(f"❌ 오류: {e}")
+    print(f"❌ 메시지 전송 오류: {e}")
+
+# 2. Excel 파일 전송
+print("📎 Excel 파일 전송 중...\n")
+file_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
+
+try:
+    with open(excel_filename, 'rb') as file:
+        files = {'document': file}
+        data = {
+            'chat_id': TELEGRAM_CHAT_ID,
+            'caption': f'📊 데이터센터 일일 리포트\n📅 {now.strftime("%Y-%m-%d %H:%M")}'
+        }
+        response = requests.post(file_url, files=files, data=data)
+        
+        if response.status_code == 200:
+            print("✅ Excel 파일 전송 성공!")
+        else:
+            print(f"❌ 파일 전송 실패: {response.status_code}")
+            print(f"   (Artifacts에서 다운로드 가능)")
+except Exception as e:
+    print(f"❌ 파일 전송 오류: {e}")
+    print(f"   (Artifacts에서 다운로드 가능)")
 
 print("\n" + "="*70)
 print("✅ 작업 완료!")
