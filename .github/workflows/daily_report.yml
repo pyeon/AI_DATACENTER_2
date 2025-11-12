@@ -15,10 +15,10 @@ jobs:
     
     steps:
       - name: 📥 코드 체크아웃
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: 🐍 Python 3.10 설정
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           cache: 'pip'
@@ -39,7 +39,7 @@ jobs:
           python scripts/datacenter_report_enhanced.py
       
       - name: 📁 결과 파일 업로드 (Artifacts)
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: daily-report-${{ github.run_number }}
