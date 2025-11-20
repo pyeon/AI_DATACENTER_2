@@ -1,7 +1,8 @@
 """
 데이터센터 투자 자동화 시스템 v2.0
 - RSI 지표 추가
-- 골든크로스/강한모멘텀/RSI 전체 표시
+- 골든크로스/데드크로스/강한모멘텀/RSI 전체 표시
+- 모든 상승/하락 종목 표시
 """
 
 import yfinance as yf
@@ -95,6 +96,7 @@ def get_stock_data(ticker, name, sector):
         
         vs_ma20 = ((current / ma_20) - 1) * 100 if ma_20 else 0
         golden_cross = ma_20 > ma_60 if (ma_20 and ma_60) else False
+        dead_cross = ma_20 < ma_60 if (ma_20 and ma_60) else False
         
         # 거래량
         volume = hist['Volume'].iloc[-1]
@@ -114,6 +116,7 @@ def get_stock_data(ticker, name, sector):
             'change_1m': change_1m,
             'vs_ma20': vs_ma20,
             'golden_cross': golden_cross,
+            'dead_cross': dead_cross,
             'volume_ratio': volume_ratio,
             'rsi': rsi,
         }
@@ -144,28 +147,44 @@ message = "📊 데이터센터 종목 일일 리포트\n"
 message += f"🕐 {now}\n"
 message += "━━━━━━━━━━━━━━━\n\n"
 
-# 상승 TOP 5
-top_gainers = df.nlargest(5, 'change_1d')
-message += "🔥 오늘 상승 TOP 5\n"
-for _, row in top_gainers.iterrows():
-    emoji = "🚀" if row['change_1d'] > 5 else "📈"
-    message += f"{emoji} {row['name']}: {row['change_1d']:+.2f}%\n"
+# 모든 상승 종목
+up_stocks = df[df['change_1d'] > 0].sort_values('change_1d', ascending=False)
+if len(up_stocks) > 0:
+    message += f"🔥 오늘 상승 종목 ({len(up_stocks)}개)\n"
+    for _, row in up_stocks.iterrows():
+        emoji = "🚀" if row['change_1d'] > 5 else "📈"
+        message += f"{emoji} {row['name']}: {row['change_1d']:+.2f}%\n"
+    message += "\n"
 
-message += "\n"
+# 모든 하락 종목
+down_stocks = df[df['change_1d'] < 0].sort_values('change_1d')
+if len(down_stocks) > 0:
+    message += f"📉 오늘 하락 종목 ({len(down_stocks)}개)\n"
+    for _, row in down_stocks.iterrows():
+        message += f"📉 {row['name']}: {row['change_1d']:+.2f}%\n"
+    message += "\n"
 
-# 하락 TOP 5
-top_losers = df.nsmallest(5, 'change_1d')
-message += "📉 오늘 하락 TOP 5\n"
-for _, row in top_losers.iterrows():
-    message += f"📉 {row['name']}: {row['change_1d']:+.2f}%\n"
-
-message += "\n"
+# 보합 종목
+flat_stocks = df[df['change_1d'] == 0]
+if len(flat_stocks) > 0:
+    message += f"➖ 보합 ({len(flat_stocks)}개)\n"
+    for _, row in flat_stocks.iterrows():
+        message += f"• {row['name']}\n"
+    message += "\n"
 
 # 골든크로스 - 전체 표시
 golden = df[df['golden_cross'] == True]
 if len(golden) > 0:
     message += f"⭐ 골든크로스 ({len(golden)}개)\n"
     for _, row in golden.iterrows():
+        message += f"• {row['name']}\n"
+    message += "\n"
+
+# 데드크로스 - 전체 표시
+dead = df[df['dead_cross'] == True]
+if len(dead) > 0:
+    message += f"💀 데드크로스 ({len(dead)}개)\n"
+    for _, row in dead.iterrows():
         message += f"• {row['name']}\n"
     message += "\n"
 
@@ -195,10 +214,12 @@ if len(rsi_oversold) > 0:
 
 up_count = len(df[df['change_1d'] > 0])
 down_count = len(df[df['change_1d'] < 0])
+flat_count = len(df[df['change_1d'] == 0])
 
 message += "━━━━━━━━━━━━━━━\n"
 message += f"📈 상승: {up_count}개\n"
 message += f"📉 하락: {down_count}개\n"
+message += f"➖ 보합: {flat_count}개\n"
 message += f"📊 총 {len(results)}개 종목"
 
 print("📱 텔레그램 전송 중...\n")
