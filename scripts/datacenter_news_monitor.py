@@ -1,6 +1,6 @@
 """
-Datacenter News Monitor v10.1
-✅ FIXED: Yahoo + Google + Naver 합집합 수집
+Datacenter News Monitor v10.0
+Multi-source news collection system with translation
 """
 
 import yfinance as yf
@@ -198,7 +198,7 @@ def get_yahoo_news_method1(ticker, seen_links):
 
 def get_google_news_rss(search_term, seen_links):
     """
-    Method 2: Collect news using Google News RSS
+    Method 2: Collect news using Google News RSS (backup method)
     """
     news_list = []
     print(f"      [Method 2] Google News RSS...")
@@ -221,10 +221,11 @@ def get_google_news_rss(search_term, seen_links):
                 title = entry.get('title', '').strip()
                 link = entry.get('link', '').strip()
                 summary = entry.get('summary', '').strip()
-                summary = re.sub(r'<[^>]+>', '', summary)
-                summary = re.sub(r'http[s]?://\S+', '', summary)
-                summary = summary.strip()[:300]
+                summary = re.sub(r'<[^>]+>', '', summary)  # HTML 태그 제거
+                summary = re.sub(r'http[s]?://\S+', '', summary)  # URL 제거
+                summary = summary.strip()[:300]  # 공백 제거 후 300자 제한
                 
+                # 유효한 요약이 아니면 비우기
                 if len(summary) < 20:
                     summary = ''
                 
@@ -267,26 +268,24 @@ def get_google_news_rss(search_term, seen_links):
 
 def get_us_news(ticker, company_name, search_terms, seen_links):
     """
-    ✅ FIXED: Get US company news using BOTH Yahoo and Google (union)
-    Previously: Yahoo OR Google (only one)
-    Now: Yahoo + Google (both sources)
+    Get US company news using multiple methods
+    Tries Yahoo Finance first, falls back to Google News if needed
     """
     all_news = []
     
     print(f"    Collecting from multiple sources...")
     
-    # 1. Always collect from Yahoo Finance
     yahoo_news = get_yahoo_news_method1(ticker, seen_links)
     all_news.extend(yahoo_news)
     
-    # 2. ✅ FIXED: Always collect from Google News (not just as fallback!)
-    print(f"      Collecting Google News...")
-    for term in search_terms[:2]:
-        google_news = get_google_news_rss(term, seen_links)
-        all_news.extend(google_news)
-        time.sleep(1)
+    if len(yahoo_news) == 0:
+        print(f"      yfinance failed, trying Google News...")
+        for term in search_terms[:2]:
+            google_news = get_google_news_rss(term, seen_links)
+            all_news.extend(google_news)
+            time.sleep(1)
     
-    print(f"    Total collected: {len(all_news)} articles (Yahoo: {len(yahoo_news)}, Google: {len(all_news) - len(yahoo_news)})")
+    print(f"    Total collected: {len(all_news)} articles")
     return all_news
 
 
@@ -365,6 +364,7 @@ def get_naver_news(search_term, seen_links):
 
 def create_docx_report(news_by_company, filename='outputs/news_report.docx'):
     """Create Word document report"""
+    # outputs 디렉토리 생성
     os.makedirs('outputs', exist_ok=True)
     
     doc = Document()
@@ -430,9 +430,9 @@ def main():
     """Main execution function"""
     
     print("="*70)
-    print("Datacenter News Monitor v10.1 - MULTI-SOURCE (FIXED)")
-    print("  ✅ US: Yahoo Finance + Google News (UNION)")
-    print("  ✅ KR: Naver API")
+    print("Datacenter News Monitor v10.0 - MULTI-SOURCE")
+    print("  US: Yahoo Finance + Google News RSS")
+    print("  KR: Naver API")
     print("  Full validation & logging")
     print("="*70)
     
