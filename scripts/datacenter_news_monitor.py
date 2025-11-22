@@ -1,6 +1,6 @@
 """
-Datacenter News Monitor v10.3 - HOTFIX
-🚨 번역 제거 + Yahoo 우회 + 안정성 우선
+Datacenter News Monitor v10.4 - WITH TRANSLATION
+✅ v10.3 기반 + 네이버 파파고 번역
 """
 
 import yfinance as yf
@@ -64,6 +64,61 @@ KOREAN_KEYWORDS = {
 
 
 # ============================================================================
+# TRANSLATION - NAVER PAPAGO
+# ============================================================================
+
+def translate_with_papago(text, max_length=4900):
+    """
+    네이버 파파고로 영문 → 한글 번역
+    실패 시 원문 반환 (안전)
+    """
+    if not text or len(text.strip()) == 0:
+        return text
+    
+    # 이미 한글이면 번역 안 함
+    korean_chars = sum(1 for c in text if '가' <= c <= '힣')
+    if len(text) > 0 and korean_chars / len(text) > 0.3:
+        return text
+    
+    # Naver API 키 없으면 원문 반환
+    if not NAVER_CLIENT_ID or not NAVER_CLIENT_SECRET:
+        return text
+    
+    try:
+        # 파파고는 5000자 제한
+        text = text.strip()
+        if len(text) > max_length:
+            text = text[:max_length-3] + "..."
+        
+        url = "https://openapi.naver.com/v1/papago/n2mt"
+        headers = {
+            "X-Naver-Client-Id": NAVER_CLIENT_ID,
+            "X-Naver-Client-Secret": NAVER_CLIENT_SECRET,
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+        }
+        data = {
+            "source": "en",
+            "target": "ko",
+            "text": text
+        }
+        
+        response = requests.post(url, headers=headers, data=data, timeout=10)
+        
+        if response.status_code == 200:
+            result = response.json()
+            translated = result.get('message', {}).get('result', {}).get('translatedText', '')
+            if translated and len(translated.strip()) > 0:
+                return translated
+        
+        # 번역 실패 시 원문 반환
+        return text
+        
+    except Exception as e:
+        # 에러 시에도 원문 반환 (안전)
+        return text
+
+
+# ============================================================================
 # UTILITY FUNCTIONS
 # ============================================================================
 
@@ -113,7 +168,7 @@ def calculate_score(title, keywords_dict):
 
 
 # ============================================================================
-# NEWS COLLECTION - GOOGLE NEWS ONLY (STABLE)
+# NEWS COLLECTION
 # ============================================================================
 
 def get_google_news_rss(search_term, seen_links):
@@ -131,7 +186,7 @@ def get_google_news_rss(search_term, seen_links):
         
         week_ago = datetime.now() - timedelta(days=7)
         
-        for entry in feed.entries[:20]:  # 더 많이 수집
+        for entry in feed.entries[:20]:
             try:
                 title = entry.get('title', '').strip()
                 link = entry.get('link', '').strip()
@@ -292,9 +347,15 @@ def create_docx_report(news_by_company, filename='outputs/news_report.docx'):
             
             para = doc.add_paragraph()
             para.add_run(f'[{emoji}] ').bold = True
-            para.add_run(news['title']).bold = True
             
-            if news.get('description'):
+            # 번역된 제목 또는 원본
+            title_text = news.get('translated_title', news['title'])
+            para.add_run(title_text).bold = True
+            
+            # 번역된 설명 또는 원본
+            if news.get('translated_description'):
+                doc.add_paragraph(f"Summary: {news['translated_description']}")
+            elif news.get('description'):
                 doc.add_paragraph(f"Summary: {news['description']}")
             
             hours = int((datetime.now() - news['date']).total_seconds() / 3600)
@@ -343,19 +404,22 @@ def main():
     """Main execution"""
     
     print("="*70)
-    print("Datacenter News Monitor v10.3 - HOTFIX")
-    print("  🚨 Stable version: No translation, Google + Naver only")
+    print("Datacenter News Monitor v10.4 - WITH TRANSLATION")
+    print("  ✅ Stable base (v10.3)")
+    print("  ✅ Naver Papago translation")
+    print("  ✅ Fallback to original if translation fails")
     print("="*70)
     
     print("\n[CONFIG]")
     print(f"  Telegram: {'✓' if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID else '✗'}")
     print(f"  Naver API: {'✓' if NAVER_CLIENT_ID and NAVER_CLIENT_SECRET else '✗'}")
+    print(f"  Translation: {'✓ Enabled' if NAVER_CLIENT_ID and NAVER_CLIENT_SECRET else '✗ Disabled (no API key)'}")
     
     seen_links = load_seen_links()
     print(f"  Seen links: {len(seen_links)}")
     
     print("\n" + "="*70)
-    print("COLLECTING NEWS")
+    print("PHASE 1: NEWS COLLECTION")
     print("="*70)
     
     all_news_by_company = defaultdict(list)
@@ -389,7 +453,7 @@ def main():
     save_seen_links(seen_links)
     
     print("\n" + "="*70)
-    print("STATS")
+    print("COLLECTION STATS")
     print("="*70)
     print(f"Google: {stats['google']}")
     print(f"Naver: {stats['naver']}")
@@ -405,17 +469,56 @@ def main():
     print(f"Final (top 2 each): {final_count}")
     
     if final_count == 0:
-        msg = f"📰 Datacenter News\n\nNo news\n\nGoogle: {stats['google']}\nNaver: {stats['naver']}"
+        msg = f"📰 데이터센터 뉴스\n\n뉴스 없음\n\nGoogle: {stats['google']}\nNaver: {stats['naver']}"
         send_telegram_message(msg)
         return
     
+    # ============================================================================
+    # PHASE 2: TRANSLATION (NEW!)
+    # ============================================================================
+    
     print("\n" + "="*70)
-    print("GENERATING MESSAGES")
+    print("PHASE 2: TRANSLATION")
+    print("="*70)
+    
+    if NAVER_CLIENT_ID and NAVER_CLIENT_SECRET:
+        translation_count = 0
+        
+        for company, news_list in filtered.items():
+            print(f"\n[{company}]")
+            for idx, news in enumerate(news_list, 1):
+                # 영문 기사만 번역 (US 기업)
+                if news['country'] == 'US':
+                    print(f"  [{idx}] Translating title...")
+                    news['translated_title'] = translate_with_papago(news['title'], 300)
+                    
+                    if news.get('description'):
+                        print(f"  [{idx}] Translating description...")
+                        news['translated_description'] = translate_with_papago(news['description'], 200)
+                    
+                    translation_count += 1
+                    time.sleep(0.5)  # 파파고 API 속도 제한 고려
+                else:
+                    # 한글 기사는 번역 안 함
+                    news['translated_title'] = news['title']
+                    news['translated_description'] = news.get('description', '')
+        
+        print(f"\nTranslated: {translation_count} articles")
+    else:
+        print("  Translation disabled (no Naver API key)")
+        # 번역 없이 원문 사용
+        for company, news_list in filtered.items():
+            for news in news_list:
+                news['translated_title'] = news['title']
+                news['translated_description'] = news.get('description', '')
+    
+    print("\n" + "="*70)
+    print("PHASE 3: MESSAGE GENERATION")
     print("="*70)
     
     messages = []
-    msg = f"📰 Datacenter News\n{datetime.now().strftime('%Y-%m-%d %H:%M')}\n{'='*30}\n\n"
-    msg += f"📊 Articles: {final_count}\n"
+    msg = f"📰 데이터센터 뉴스\n{datetime.now().strftime('%Y-%m-%d %H:%M')}\n{'='*30}\n\n"
+    msg += f"📊 기사: {final_count}개\n"
     msg += f"Google: {stats['google']} | Naver: {stats['naver']}\n\n"
     
     for company, news_list in sorted(filtered.items(), 
@@ -427,12 +530,15 @@ def main():
         for news in news_list:
             emoji = "🔥" if news['score'] >= 10 else "📈"
             hours = int((datetime.now() - news['date']).total_seconds() / 3600)
-            time_str = "Now" if hours < 1 else f"{hours}h ago" if hours < 24 else f"{hours//24}d ago"
+            time_str = "방금" if hours < 1 else f"{hours}시간 전" if hours < 24 else f"{hours//24}일 전"
             
-            section += f"{emoji} {news['title']}\n\n"
+            # 번역된 제목 사용 (없으면 원본)
+            title_text = news.get('translated_title', news['title'])
+            section += f"{emoji} {title_text}\n\n"
             
-            if news.get('description'):
-                section += f"{news['description']}\n\n"
+            # 번역된 설명 사용 (있으면)
+            if news.get('translated_description') and len(news['translated_description'].strip()) > 0:
+                section += f"{news['translated_description']}\n\n"
             
             section += f"⏰ {time_str} | 📰 {news['publisher']}\n"
             section += f"🔗 {news['link']}\n\n"
@@ -453,7 +559,7 @@ def main():
     docx = create_docx_report(filtered, f"outputs/news_{datetime.now().strftime('%Y%m%d')}.docx")
     
     print("\n" + "="*70)
-    print(f"SENDING TO TELEGRAM")
+    print(f"PHASE 4: TELEGRAM DELIVERY")
     print("="*70)
     
     for idx, m in enumerate(messages, 1):
@@ -461,11 +567,11 @@ def main():
         print(f"  Message {idx}: Sent")
         time.sleep(1)
     
-    send_telegram_document(docx, '📰 Datacenter News Report')
+    send_telegram_document(docx, '📰 데이터센터 뉴스 리포트')
     print("  DOCX: Sent")
     
     print("\n" + "="*70)
-    print("✅ DONE")
+    print("✅ COMPLETE")
     print("="*70)
 
 
